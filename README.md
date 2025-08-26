@@ -49,6 +49,8 @@ let create_request = CreateRequest {
     buy_order: "ORDER-123".into(),
     session_id: "sess-1".into(),
     amount: 1000,
+    // For production, this must be a publicly accessible URL (e.g., https://your-site.com/webpay/return).
+    // For local development, you can use a localhost URL (e.g., http://localhost:3000/webpay/return).
     return_url: "https://your-site.com/webpay-return".into(),
 };
 let created = client.wp_create(&create_request).await?;
@@ -131,6 +133,27 @@ cargo run --example transaction_scenarios -- refund
 ```
 
 Available scenarios: `success`, `rejected`, `abort`, `refund`. The source code (`examples/transaction_scenarios.rs`) explains what happens in each case.
+
+## Best Practices
+
+When moving to a production environment, consider the following:
+
+*   **Use Production Environment**: Change `Environment::Integration` to `Environment::Production` in the `WebpayClient` constructor. You will need to have valid production credentials from Transbank.
+
+*   **Secure Credential Management**: Avoid hardcoding your `commerce_code` and `api_key`. Use environment variables, a `.env` file (with a library like `dotenv`), or a secret management service to keep your credentials secure.
+
+    ```rust
+    // Example using environment variables
+    let api_key = std::env::var("WEBPAY_API_KEY").expect("WEBPAY_API_KEY must be set");
+    let commerce_code = std::env::var("WEBPAY_COMMERCE_CODE").expect("WEBPAY_COMMERCE_CODE must be set");
+
+    let credentials = Credentials {
+        api_key: api_key.into(),
+        commerce_code: commerce_code.into(),
+    };
+    ```
+
+*   **Idempotency and State Management**: When handling the return from Webpay, ensure your logic for updating your database (e.g., marking an order as paid) is idempotent. This means that if the same successful transaction notification is processed multiple times, it does not result in duplicate updates. Always verify the transaction status with `wp_commit` before updating your system.
 
 ## Testing
 

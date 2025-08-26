@@ -53,6 +53,9 @@ async fn pay(wp: WebpayClient) -> Html<String> {
         buy_order: "ORDER-AXUM-123".into(),
         session_id: "sess-axum-456".into(),
         amount: 1990,
+        // This is the URL where Webpay will redirect the user after the transaction is completed.
+        // For production, this must be a publicly accessible URL.
+        // For this example, we use a localhost URL that matches our running server.
         return_url: "http://127.0.0.1:3000/webpay/return".into(),
     };
 
