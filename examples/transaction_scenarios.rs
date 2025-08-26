@@ -1,10 +1,15 @@
-// Run: cargo run --example transaction_scenarios -- <scenario>
+// This example demonstrates various transaction scenarios using the Webpay Plus client.
+// It is an interactive command-line tool that requires manual user input to simulate
+// the redirection flow of a real web application.
 //
-// Scenarios:
-// - success: A successful transaction.
-// - rejected: A transaction rejected by the user.
-// - abort: A transaction aborted by the user.
-// - refund: A successful transaction followed by a refund.
+// Usage:
+// cargo run --example transaction_scenarios -- <scenario>
+//
+// Available scenarios:
+// - success: Simulates a successful payment.
+// - rejected: Simulates a payment rejected by the user on the Webpay platform.
+// - abort: Simulates a payment aborted by the user (e.g., closing the browser).
+// - refund: Simulates a successful payment followed by a refund.
 
 use std::env;
 use webpay::client::{WebpayClient, Environment, Credentials};
@@ -16,12 +21,15 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         println!("Usage: cargo run --example transaction_scenarios -- <scenario>");
-        println!("Scenarios: success, rejected, abort, refund");
+        println!("Available scenarios: success, rejected, abort, refund");
         return;
     }
 
     let scenario = &args[1];
 
+    // The WebpayClient is the main entry point to the library.
+    // It requires the environment (Integration or Production) and credentials.
+    // For this example, we use the integration environment and credentials.
     let wp = WebpayClient::new(
         Environment::Integration,
         Credentials {
@@ -30,6 +38,7 @@ async fn main() {
         },
     );
 
+    // Based on the command-line argument, we run the corresponding scenario.
     match scenario.as_str() {
         "success" => handle_success(&wp).await,
         "rejected" => handle_rejected(&wp).await,
@@ -37,126 +46,177 @@ async fn main() {
         "refund" => handle_refund(&wp).await,
         _ => {
             println!("Invalid scenario: {}", scenario);
-            println!("Scenarios: success, rejected, abort, refund");
+            println!("Available scenarios: success, rejected, abort, refund");
         }
     }
 }
 
+// Scenario 1: A successful transaction.
+// The user completes the payment on the Webpay platform.
 async fn handle_success(wp: &WebpayClient) {
-    println!("--- Running success scenario ---");
+    println!("\n--- Running Scenario: Successful Transaction ---");
+    println!("This scenario simulates a user successfully completing a payment.");
+
+    // 1. Create the transaction details.
     let req = CreateRequest {
-        buy_order: "ORDER-SUCCESS".into(),
-        session_id: "sess-success".into(),
-        amount: 1000,
-        return_url: "http://localhost:3000/return".into(),
+        buy_order: "ORDER-SUCCESS-123".into(),
+        session_id: "sess-success-456".into(),
+        amount: 1500,
+        return_url: "http://localhost:3000/webpay/return".into(), // URL where the user will be redirected after payment.
     };
+    println!("\n[Step 1] Creating transaction with the following details:\n{:#?}", req);
 
-    let created = wp.wp_create(&req).await.expect("create");
-    println!("Transaction created: {:?}", created);
-
-    println!("Please go to the following URL to continue the transaction:");
+    // 2. Call `wp_create` to get the URL for redirection.
+    let created = wp.wp_create(&req).await.expect("Failed to create transaction");
+    println!("\n[Step 2] Transaction created successfully. Response:\n{:#?}", created);
+    println!("\n[Step 3] Please open the following URL in your browser to proceed with the payment:");
     println!("{}", created.url);
 
-    // In a real application, you would redirect the user to the URL above.
-    // For this example, we will manually get the token from the user.
-    println!("Please enter the token_ws from the URL:");
+    // 3. Manually get the token from the user.
+    // In a real web application, the user would be redirected back to your `return_url`,
+    // and the token (`token_ws`) would be part of the POST request.
+    println!("\n[Step 4] After completing the payment, you will be redirected to a blank page.");
+    println!("   Please enter the 'token_ws' value from the form data of that page:");
     let mut token_ws = String::new();
     std::io::stdin().read_line(&mut token_ws).unwrap();
     let token_ws = token_ws.trim();
 
-    let commit = wp.wp_commit(token_ws).await.expect("commit");
-    println!("Transaction committed: {:?}", commit);
+    // 4. Commit the transaction using the received token.
+    println!("\n[Step 5] Committing the transaction with token: {}", token_ws);
+    let commit = wp.wp_commit(token_ws).await.expect("Failed to commit transaction");
+    println!("\n[Step 6] Transaction committed. Response:\n{:#?}", commit);
 
+    // 5. Check if the transaction was authorized.
     if is_authorized(&commit) {
-        println!("Transaction successful! ✅");
+        println!("\n[Result] Transaction successful! ✅");
+        println!("   - Order: {}", commit.buy_order);
+        println!("   - Amount: {}", commit.amount);
+        println!("   - Authorization Code: {:?}", commit.authorization_code);
     } else {
-        println!("Transaction rejected! ❌");
+        println!("\n[Result] Transaction was not authorized. ❌");
     }
 }
 
+// Scenario 2: A transaction rejected by the user.
+// The user cancels the payment on the Webpay platform.
 async fn handle_rejected(wp: &WebpayClient) {
-    println!("--- Running rejected scenario ---");
+    println!("\n--- Running Scenario: Rejected Transaction ---");
+    println!("This scenario simulates a user rejecting a payment on the Webpay platform.");
+
+    // 1. Create the transaction details.
     let req = CreateRequest {
-        buy_order: "ORDER-REJECTED".into(),
-        session_id: "sess-rejected".into(),
-        amount: 1000,
-        return_url: "http://localhost:3000/return".into(),
+        buy_order: "ORDER-REJECTED-123".into(),
+        session_id: "sess-rejected-456".into(),
+        amount: 2000,
+        return_url: "http://localhost:3000/webpay/return".into(),
     };
+    println!("\n[Step 1] Creating transaction with the following details:\n{:#?}", req);
 
-    let created = wp.wp_create(&req).await.expect("create");
-    println!("Transaction created: {:?}", created);
-
-    println!("Please go to the following URL to continue the transaction and reject it:");
+    // 2. Call `wp_create` to get the URL for redirection.
+    let created = wp.wp_create(&req).await.expect("Failed to create transaction");
+    println!("\n[Step 2] Transaction created successfully. Response:\n{:#?}", created);
+    println!("\n[Step 3] Please open the following URL and reject the payment:");
     println!("{}", created.url);
 
-    // In a real application, you would redirect the user to the URL above.
-    // For this example, we will manually get the token from the user.
-    println!("Please enter the token_ws from the URL:");
+    // 3. Manually get the token from the user.
+    println!("\n[Step 4] After rejecting the payment, enter the 'token_ws' from the form data:");
     let mut token_ws = String::new();
     std::io::stdin().read_line(&mut token_ws).unwrap();
     let token_ws = token_ws.trim();
 
-    let commit = wp.wp_commit(token_ws).await.expect("commit");
-    println!("Transaction committed: {:?}", commit);
+    // 4. Commit the transaction.
+    println!("\n[Step 5] Committing the transaction with token: {}", token_ws);
+    let commit = wp.wp_commit(token_ws).await.expect("Failed to commit transaction");
+    println!("\n[Step 6] Transaction committed. Response:\n{:#?}", commit);
 
+    // 5. Check if the transaction was authorized.
     if is_authorized(&commit) {
-        println!("Transaction successful! ✅");
+        println!("\n[Result] Transaction was unexpectedly authorized. This should not happen in a rejection scenario. 🤔");
     } else {
-        println!("Transaction rejected! ❌");
+        println!("\n[Result] Transaction rejected as expected. ❌");
+        println!("   - Status: {}", commit.status);
+        println!("   - Response Code: {:?}", commit.response_code);
     }
 }
 
+// Scenario 3: A transaction aborted by the user.
+// The user closes the browser or navigates away before completing the payment.
 async fn handle_abort(wp: &WebpayClient) {
-    println!("--- Running abort scenario ---");
+    println!("\n--- Running Scenario: Aborted Transaction ---");
+    println!("This scenario simulates a user aborting a payment by closing the browser.");
+
+    // 1. Create the transaction details.
     let req = CreateRequest {
-        buy_order: "ORDER-ABORT".into(),
-        session_id: "sess-abort".into(),
-        amount: 1000,
-        return_url: "http://localhost:3000/return".into(),
+        buy_order: "ORDER-ABORT-123".into(),
+        session_id: "sess-abort-456".into(),
+        amount: 2500,
+        return_url: "http://localhost:3000/webpay/return".into(),
     };
+    println!("\n[Step 1] Creating transaction with the following details:\n{:#?}", req);
 
-    let created = wp.wp_create(&req).await.expect("create");
-    println!("Transaction created: {:?}", created);
-
-    println!("Please go to the following URL to continue the transaction and abort it:");
+    // 2. Call `wp_create` to get the URL for redirection.
+    let created = wp.wp_create(&req).await.expect("Failed to create transaction");
+    println!("\n[Step 2] Transaction created successfully. Response:\n{:#?}", created);
+    println!("\n[Step 3] Please open the following URL, but instead of paying, close the tab or browser.");
     println!("{}", created.url);
 
-    println!("After aborting the transaction, you will be redirected to the return_url.");
-    println!("The return_url will contain the TBK_TOKEN, TBK_ORDEN_COMPRA, and TBK_ID_SESION parameters.");
-    println!("This example does not handle the return URL, but in a real application, you would need to.");
+    // 3. Explain the abortion flow.
+    println!("\n[Step 4] When a user aborts, Webpay redirects them to the `return_url` with different parameters.");
+    println!("   Instead of `token_ws`, you will receive:");
+    println!("   - TBK_TOKEN");
+    println!("   - TBK_ORDEN_COMPRA");
+    println!("   - TBK_ID_SESION");
+    println!("\n[Result] This example does not handle the `return_url` logic, but a real application must.");
+    println!("   You should check for these parameters to identify an aborted transaction.");
 }
 
+// Scenario 4: A successful transaction followed by a refund.
 async fn handle_refund(wp: &WebpayClient) {
-    println!("--- Running refund scenario ---");
+    println!("\n--- Running Scenario: Refund Transaction ---");
+    println!("This scenario simulates a successful payment followed by a partial refund.");
+
+    // 1. Create and commit a successful transaction first.
     let req = CreateRequest {
-        buy_order: "ORDER-REFUND".into(),
-        session_id: "sess-refund".into(),
-        amount: 1000,
-        return_url: "http://localhost:3000/return".into(),
+        buy_order: "ORDER-REFUND-123".into(),
+        session_id: "sess-refund-456".into(),
+        amount: 3000,
+        return_url: "http://localhost:3000/webpay/return".into(),
     };
+    println!("\n[Step 1] Creating transaction with the following details:\n{:#?}", req);
 
-    let created = wp.wp_create(&req).await.expect("create");
-    println!("Transaction created: {:?}", created);
-
-    println!("Please go to the following URL to continue the transaction:");
+    let created = wp.wp_create(&req).await.expect("Failed to create transaction");
+    println!("\n[Step 2] Transaction created successfully. Response:\n{:#?}", created);
+    println!("\n[Step 3] Please open the following URL and complete the payment:");
     println!("{}", created.url);
 
-    // In a real application, you would redirect the user to the URL above.
-    // For this example, we will manually get the token from the user.
-    println!("Please enter the token_ws from the URL:");
+    println!("\n[Step 4] After completing the payment, enter the 'token_ws':");
     let mut token_ws = String::new();
     std::io::stdin().read_line(&mut token_ws).unwrap();
     let token_ws = token_ws.trim();
 
-    let commit = wp.wp_commit(token_ws).await.expect("commit");
-    println!("Transaction committed: {:?}", commit);
+    println!("\n[Step 5] Committing the transaction with token: {}", token_ws);
+    let commit = wp.wp_commit(token_ws).await.expect("Failed to commit transaction");
+    println!("\n[Step 6] Transaction committed. Response:\n{:#?}", commit);
 
+    // 2. If the transaction was successful, proceed with the refund.
     if is_authorized(&commit) {
-        println!("Transaction successful! ✅");
-        println!("Refunding transaction...");
-        let refund = wp.wp_refund(token_ws, 500).await.expect("refund");
-        println!("Refund response: {:?}", refund);
+        println!("\n[Result] Transaction successful! ✅");
+        println!("\n[Step 7] Now, proceeding with a partial refund...");
+        let amount_to_refund = 500; // Can be a partial or full refund.
+        println!("   - Amount to refund: {}", amount_to_refund);
+
+        // 3. Call `wp_refund` with the token of the original transaction and the amount.
+        let refund = wp.wp_refund(token_ws, amount_to_refund).await.expect("Failed to refund transaction");
+        println!("\n[Step 8] Refund processed. Response:\n{:#?}", refund);
+
+        // 4. Check the refund response.
+        // A `response_code` of 0 indicates a successful refund.
+        if refund.response_code == Some(0) {
+            println!("\n[Result] Refund successful! 💰");
+        } else {
+            println!("\n[Result] Refund failed. ❌");
+        }
     } else {
-        println!("Transaction rejected! ❌");
+        println!("\n[Result] Transaction was not authorized, so it cannot be refunded. ❌");
     }
 }

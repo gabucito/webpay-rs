@@ -24,104 +24,136 @@ webpay = { git = "https://github.com/gabucito/webpay-rs.git" }
 
 ## Usage
 
-First, create a `WebpayClient` instance with your credentials and the desired environment.
+The basic workflow for a Webpay transaction involves the following steps:
+
+1.  **Create a `WebpayClient`**: Initialize the client with your credentials and the desired environment (`Integration` or `Production`).
+2.  **Create a Transaction**: Use `wp_create` to register the transaction with Transbank and get a URL to redirect the user.
+3.  **Commit a Transaction**: After the user is redirected back to your site, use `wp_commit` with the received `token_ws` to confirm the payment.
+4.  **Handle the Result**: Check if the transaction was authorized and update your application state accordingly.
 
 ```rust
 use webpay::{client::{WebpayClient, Environment, Credentials}, types::CreateRequest};
 use webpay::webpay_plus::is_authorized;
 
+// 1. Initialize the client
 let client = WebpayClient::new(
-    Environment::Integration, // Or Environment::Production
+    Environment::Integration, // Use Environment::Production for live transactions
     Credentials {
-        commerce_code: "597055555532".into(),
-        api_key: "579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C".into(),
+        commerce_code: "597055555532".into(), // Your commerce code
+        api_key: "579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C".into(), // Your secret API key
     },
 );
-```
 
-### Creating a Transaction
-
-To start a new transaction, use the `wp_create` method. This will return a URL where the user should be redirected to complete the payment.
-
-```rust
+// 2. Create the transaction
 let create_request = CreateRequest {
     buy_order: "ORDER-123".into(),
     session_id: "sess-1".into(),
     amount: 1000,
-    return_url: "https://example.com/return".into(),
+    // For production, this must be a publicly accessible URL (e.g., https://your-site.com/webpay/return).
+    // For local development, you can use a localhost URL (e.g., http://localhost:3000/webpay/return).
+    return_url: "https://your-site.com/webpay-return".into(),
 };
+let created = client.wp_create(&create_request).await?;
 
-let created_transaction = client.wp_create(&create_request).await?;
-println!("Redirect user to: {}", created_transaction.url);
-```
+// `created.url` is where you should redirect the user to complete the payment.
+// `created.token` is the `token_ws` that will be used to identify the transaction.
+println!("Redirect user to: {}?token_ws={}", created.url, created.token);
 
-### Committing a Transaction
-
-After the user completes the payment process on Transbank's platform, they will be redirected back to the `return_url` you specified. The `token_ws` will be included in the POST data. Use this token to commit the transaction.
-
-#### Successful Transaction
-
-If the payment is successful, the `is_authorized` function will return `true`.
-
-```rust
+// 3. Commit the transaction (after user returns from Webpay)
+// The `token_ws` is typically received as a POST parameter to your `return_url`.
 let token_ws = "the_token_returned_by_transbank";
 let committed = client.wp_commit(token_ws).await?;
 
+// 4. Handle the result
 if is_authorized(&committed) {
-    println!("Transaction successful! ✅");
-    // Here you should update your application's state, e.g., mark the order as paid.
+    println!("✅ Transaction successful!");
+    // Mark the order as paid in your database.
 } else {
-    println!("Transaction rejected! ❌");
-    // The transaction was not authorized.
+    println!("❌ Transaction rejected or failed.");
+    // The transaction was not authorized. Check `committed.status` and `committed.response_code`.
 }
 ```
 
-#### Rejected Transaction
+### Other Operations
 
-If the user rejects the transaction on the Transbank platform, the commit response will indicate this, and `is_authorized` will be `false`.
+#### Refunding a Transaction
 
-#### Aborted Transaction
-
-If the user aborts the transaction (e.g., by closing the browser), they will be redirected to the `return_url` with parameters like `TBK_TOKEN`, `TBK_ORDEN_COMPRA`, and `TBK_ID_SESION`. Your application should handle this case. The library does not currently have a specific helper for this, but you can detect it by checking for these parameters in the return request.
-
-### Refunding a Transaction
-
-You can refund a previously committed transaction using the `wp_refund` method. You will need the `token_ws` of the original transaction.
+You can refund a previously committed transaction. You'll need the `token_ws` of the original transaction.
 
 ```rust
-let token_ws = "the_token_of_the_original_transaction";
+let token_ws = "token_of_the_original_transaction";
 let amount_to_refund = 500; // Can be a partial or full refund
 
 let refund = client.wp_refund(token_ws, amount_to_refund).await?;
-println!("Refund response: {:?}", refund);
+if refund.response_code == Some(0) {
+    println!("💰 Refund successful!");
+}
 ```
 
-### Getting Transaction Status
+#### Getting Transaction Status
 
-To get the status of a transaction, use the `wp_status` method with the transaction's token.
+Check the status of any transaction using its `token_ws`.
 
 ```rust
-let token_ws = "the_token_of_the_transaction";
+let token_ws = "token_of_the_transaction_to_check";
 let status = client.wp_status(token_ws).await?;
 println!("Transaction status: {:?}", status);
 ```
 
-## Examples
+## Detailed Examples
 
-The `examples` directory contains the following examples:
+The `examples` directory contains fully commented, runnable examples that demonstrate common workflows. **It is highly recommended to review them.**
 
-*   `axum_demo`: A web server that demonstrates how to use the library with the Axum framework.
-*   `transaction_scenarios`: A command-line application that demonstrates how to handle different transaction scenarios.
+*   `axum_demo`: A complete web server that shows how to handle the entire payment flow, including creating, committing, and handling different return scenarios (success, rejection, abortion).
+*   `transaction_scenarios`: An interactive command-line application to simulate and understand different outcomes like successful payments, rejections, and refunds.
 
-To run the examples, use the following commands:
+### How to Run the Examples
+
+#### Axum Web Server Demo
+
+This example starts a web server on `http://127.0.0.1:3000`.
 
 ```bash
 # Run the Axum demo
 cargo run --example axum_demo
-
-# Run the transaction scenarios example
-cargo run --example transaction_scenarios -- <scenario>
 ```
+
+Open `http://127.0.0.1:3000/pay` in your browser to initiate a payment. The source code (`examples/axum_demo.rs`) is heavily commented to explain each step of the integration.
+
+#### Interactive Transaction Scenarios
+
+This example runs different scenarios in your terminal.
+
+```bash
+# Run the 'success' scenario
+cargo run --example transaction_scenarios -- success
+
+# Run the 'refund' scenario
+cargo run --example transaction_scenarios -- refund
+```
+
+Available scenarios: `success`, `rejected`, `abort`, `refund`. The source code (`examples/transaction_scenarios.rs`) explains what happens in each case.
+
+## Best Practices
+
+When moving to a production environment, consider the following:
+
+*   **Use Production Environment**: Change `Environment::Integration` to `Environment::Production` in the `WebpayClient` constructor. You will need to have valid production credentials from Transbank.
+
+*   **Secure Credential Management**: Avoid hardcoding your `commerce_code` and `api_key`. Use environment variables, a `.env` file (with a library like `dotenv`), or a secret management service to keep your credentials secure.
+
+    ```rust
+    // Example using environment variables
+    let api_key = std::env::var("WEBPAY_API_KEY").expect("WEBPAY_API_KEY must be set");
+    let commerce_code = std::env::var("WEBPAY_COMMERCE_CODE").expect("WEBPAY_COMMERCE_CODE must be set");
+
+    let credentials = Credentials {
+        api_key: api_key.into(),
+        commerce_code: commerce_code.into(),
+    };
+    ```
+
+*   **Idempotency and State Management**: When handling the return from Webpay, ensure your logic for updating your database (e.g., marking an order as paid) is idempotent. This means that if the same successful transaction notification is processed multiple times, it does not result in duplicate updates. Always verify the transaction status with `wp_commit` before updating your system.
 
 ## Testing
 
