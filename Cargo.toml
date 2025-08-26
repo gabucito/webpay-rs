@@ -1,0 +1,22 @@
+[package]
+name = "webpay"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Unofficial async Rust client for Transbank Webpay Plus REST (create, commit, status, refund)."
+repository = ""
+readme = "README.md"
+categories = ["api-bindings"]
+keywords = ["transbank", "webpay", "payments", "chile", "rest"]
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+url = "2"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
